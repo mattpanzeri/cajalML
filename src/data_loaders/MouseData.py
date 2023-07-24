@@ -59,3 +59,8 @@ class MouseData():
 if __name__ == "__main__":
     mouse = MouseData(38)
     print(mouse.recorded_brain_areas)
+    print("spikes", mouse.spikes.shape)
+    print("wheel", mouse.wheel.shape)
+    print("face", mouse.face.shape)
+    print("response", mouse.response.shape)
+    print("pupil", mouse.pupil.shape)   
