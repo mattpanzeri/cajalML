@@ -4,81 +4,93 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 
-class MeanFiringPerArea(MouseData, Dataset):
-    """
-    X is the mean firing rate across neurons, per area
-    there is no time window component
-    """
-    def __init__(self, session, trials=None):
-        """
-        Parameters
-        ----------
-        session : int
-            the session to use
-        trials : array of ints
-            the trials to use for the dataset
-        """
-        super().__init__(session)
+class MeanFiringRate(MouseData, Dataset):
 
+    def __init__(self, session, trials=None, areas=None, window=1, offset=0, as_tensor=True):
+        # initialize the dataset object
+        super().__init__(session)
+        self.session = session
+        self.trials = trials
+        self.window = window
+        self.offset = offset
+        self.as_tensor = as_tensor
+        self.areas = areas if areas is not None else self.recorded_brain_areas
+        self.n_areas = len(self.areas)
         # get mean spiking per brain region
         data = []
-        self.n_areas = len(self.recorded_brain_areas)
-        for area in self.recorded_brain_areas:
+        for area in self.areas:
             X = self.spikes[self.brain_areas == area, :, :].mean(axis=0) / self.dt # average across neurons
             data.append(X[trials, :]) # select trials
-        self.X = torch.tensor(np.array(data).reshape(self.n_areas,-1).T, dtype=torch.float32)
-        self.y = torch.tensor(self.licks.squeeze()[trials].reshape(-1,1), dtype=torch.float32)
-
+        self.X = np.array(data) # shape is (n_areas, n_trials, n_time)
+        self.n_trials = self.X.shape[1]
+        self.y = self.licks.squeeze()[trials]
+        self.n_time = self.NTi - self.window - self.offset
+        
     def __len__(self):
-        return self.NTr*self.NTi
-    
+        return self.n_trials * self.n_time
+
     def __getitem__(self, index):
-        return self.X[index], self.y[index]
+        trial = index // self.n_trials
+        time = (index % self.n_time) 
+        start, end = time, time + self.window + self.offset
+        X = self.X[:, trial, start: end].flatten()
+        y = self.y[trial, end].flatten()
+        if self.as_tensor:
+            return torch.tensor(X, dtype=torch.float32), torch.tensor(y, dtype=torch.float32)
+        else:
+            return X, y
+        
 
-    def plot(self):
-        plt.figure()
-        plt.imshow(self.X.T, aspect='auto', vmin=0, vmax=20, cmap='jet')
-        plt.colorbar(label='mean firing rate (Hz)')
-        plt.yticks(np.arange(self.n_areas), self.recorded_brain_areas)
-        plt.plot(self.n_areas-self.y-0.5, 'k')
-        plt.show()
+class NeuronsFiringRate(MouseData, Dataset):
 
-class AllNeuronsPerArea(MouseData, Dataset):
-    """
-    X is the firing rates for all neurons, sorted by area
-    there is no time window component
-    """
-    def __init__(self, session, trials=None):
-        """
-        Parameters
-        ----------
-        session : int
-            the session to use
-        trials : array of ints
-            the trials to use for the dataset
-        """
+    def __init__(self, session, trials=None, areas=None, window=1, offset=0, as_tensor=True):
+        # initialize the dataset object
         super().__init__(session)
-
-        # get data ordered by brain region
+        self.session = session
+        self.trials = trials
+        self.window = window
+        self.offset = offset
+        self.as_tensor = as_tensor
+        self.areas = areas if areas is not None else self.recorded_brain_areas
+        self.n_areas = len(self.areas)
+        # get mean spiking per brain region
         data = []
         n_neurons = []
-        self.n_areas = len(self.recorded_brain_areas)
-        for area in self.recorded_brain_areas:
+        for area in self.areas:
             X = self.spikes[self.brain_areas == area, :, :] / self.dt
             n_neurons.append(X.shape[0])
             data.append(X[:,trials])
         self.n_neurons = np.array(n_neurons)
-        self.X = torch.tensor(np.vstack(data).reshape(self.n_neurons.sum(),-1).T, dtype=torch.float32)
-        self.y = torch.tensor(self.licks.squeeze()[trials].reshape(-1,1), dtype=torch.float32)
-
+        self.X = np.vstack(data) # shape is (n_areas, n_trials, n_time)
+        self.n_trials = self.X.shape[1]
+        self.y = self.licks.squeeze()[trials]
+        self.TN = (self.y==0).sum()
+        self.TP = (self.y==1).sum()
+        self.n_time = self.NTi - self.window - self.offset 
+        
     def __len__(self):
-        return self.NTr*self.NTi
-    
-    def __getitem__(self, index):
-        return self.X[index], self.y[index]
+        return self.n_trials * self.n_time
 
+    def __getitem__(self, index):
+        trial = index // self.n_time
+        time = index % self.n_time
+        start, end = time - self.offset, time + self.window - self.offset
+        X = self.X[:, trial, start: end].flatten()
+        y = self.y[trial, end].flatten()
+        if self.as_tensor:
+            return torch.tensor(X, dtype=torch.float32), torch.tensor(y, dtype=torch.float32)
+        else:
+            return X, y
 
 if __name__ == "__main__":
-    ds = AllNeuronsPerArea(10, np.arange(50))
-    print(ds.X.shape)
-    print(ds.y.shape)
+    ds = NeuronsFiringRate(10, trials = np.arange(50), window=1, offset = 0, areas=["MOp"])
+    print(ds[0][0].shape, ds[0][1].shape, len(ds), ds.n_neurons)
+    from torch.utils.data import DataLoader
+    dl = DataLoader(ds, batch_size=500, shuffle=False)
+    x, y = next(iter(dl))
+    print(x.shape, y.shape)
+
+    plt.figure()
+    plt.imshow(x.T, aspect='auto', vmin=0, interpolation='none', cmap='jet')
+    plt.colorbar()
+    plt.show()
