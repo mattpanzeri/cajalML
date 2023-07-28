@@ -35,12 +35,13 @@ def train_session(session, h):
         model = LinReg.LinReg(train_ds.n_neurons.sum()*h['window'], 1)
         optimizer = torch.optim.Adam(model.parameters(), lr=h['lr'])
 
-        criterion = nn.BCEWithLogitsLoss(pos_weight=weights)
+        criterion = nn.BCEWithLogitsLoss()
 
         # initialize logger
         now = datetime.now()
         date_time = now.strftime("%Y%m%d-%H%M%S")
-        log_dir = f"runs/session_{session}/{area}_window_{h['window']}_batch_{h['batch_size']}_epochs_{h['epochs']}_{date_time}"
+        ss = "%02d" % session
+        log_dir = f"runs/session_{ss}/{area}_window_{h['window']}_batch_{h['batch_size']}_epochs_{h['epochs']}_{date_time}_no_weight"
         logger = SummaryWriter(log_dir)
         train_model(model, train_dl, test_dl, h['epochs'], criterion, optimizer, logger)
 
@@ -129,12 +130,14 @@ if __name__ == '__main__':
         n_trials = 100,
         window = 1,
         offset = 0,
-        epochs = 200,
+        epochs = 150,
         batch_size = 2000,
-        lr = 5e-5
+        lr = 5e-4
     )
 
+    for session in [20]:
+        train_session(session, hparams)
     #train_session(20, hparams)
     # train the model
-    for i in range(39):
-        train_session(i, hparams)
+    #for i in np.arange(39)[::-1]:
+    #    train_session(i, hparams)
